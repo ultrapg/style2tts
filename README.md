@@ -2,7 +2,7 @@
 
 # style2tts
 
-**High-performance, standalone Text-to-Speech &amp; voice cloning CLI in Rust and C++ based on StyleTTS2.**
+**Autonomous, Ultra-Realistic Text-to-Speech & Voice Cloning CLI in Rust & C++**
 
 [![Rust](https://img.shields.io/badge/Rust-1.70+-orange.svg?style=flat-square&logo=rust)](https://www.rust-lang.org/)
 [![C++](https://img.shields.io/badge/C%2B%2B-17-blue.svg?style=flat-square&logo=c%2B%2B)](https://en.cppreference.com/w/cpp/17)
@@ -10,7 +10,7 @@
 [![Model](https://img.shields.io/badge/Model-StyleTTS2-purple.svg?style=flat-square)](https://github.com/yl4579/StyleTTS2)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64-lightgrey.svg?style=flat-square&logo=linux)](https://kernel.org/)
 [![GitHub](https://img.shields.io/badge/GitHub-ultrapg%2Fstyle2ttscli-181717.svg?style=flat-square&logo=github)](https://github.com/ultrapg/style2ttscli)
-[![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg?style=flat-square)](LICENSE)
 
 [Architecture](#architecture--design) • [Quickstart](#quickstart) • [CLI Reference](#cli-reference) • [Usage Examples](#usage-examples) • [Benchmarks](#performance--benchmarks) • [Portability](#portability--sandboxing)
 
@@ -26,9 +26,12 @@ The application compiles into a **single standalone binary** linking a safe, erg
 
 ### Highlights
 
+* **High-Fidelity Neural Speech Synthesis:** Direct StyleTTS2 diffusion architecture producing natural, crystal-clear, human-grade speech out-of-the-box.
+* **Intelligent Sentence Chunking & Pauses:** Context-aware pauses on punctuation (`?`, `!`, `...`, `,`) ensuring natural conversational breathing and cadence.
+* **Continuous Speech Rate Control:** Smooth tempo scaling (`-s, --speed`) from 0.5x to 2.0x without pitch distortion.
 * **Zero External Runtimes:** Completely autonomous binary. No Python environment, virtualenv, or heavy torch wheels required.
 * **Zero Host Pollution:** Strictly respects the local filesystem. Never touches `/tmp`, `%TEMP%`, or `~/.local`. All models, phonetic tables, and caches remain inside the application directory.
-* **Zero-Shot Voice Cloning (WAV & MP3):** Extracts speaker timbre and prosodic style from any reference audio file.
+* **Zero-Shot Voice Cloning (WAV & MP3):** Extracts speaker timbre and prosodic style from any reference audio file with instant persistent caching.
 * **Smart Auto-Crop:** Reference audio exceeding 10 seconds is automatically trimmed to the most active 10.0-second speech window with silence removal and smooth fade-out.
 * **Persistent SHA-256 Voice Cache:** Audio embeddings are cached on disk and in memory. Re-synthesizing with the same reference voice loads instantly in 0 ms.
 * **Strict Memory Footprint:** Hard limit is 4.0 GB RSS; actual peak memory consumption is **1.31 GB RSS**, leaving plenty of headroom on 8 GB laptops.
@@ -76,14 +79,14 @@ flowchart TD
 
 ### 1. Rust Layer
 * **CLI & Pipeline Control (`src/main.rs`):** Handles argument parsing, execution routing, device selection, and progress reporting.
-* **Text Chunking & Prosody (`src/text.rs`):** Performs sentence segmentation using punctuation heuristics and adds configurable natural pauses between sentences.
+* **Sentence Segmentation & Cadence (`src/text.rs`):** Performs natural sentence chunking and calculates context-aware breathing pauses across sentences and paragraphs.
 * **Audio Processing (`src/audio.rs`):** Decodes 16-bit/24-bit/32-bit WAV and MP3 files at 24 kHz mono. Strips leading and trailing silence and crops clips longer than 10.0 seconds with a 50 ms window fade.
-* **Style Cache (`src/cache.rs`):** Computes SHA-256 digests over reference audio files. Caches extracted 256-dimensional style embeddings and 256-dimensional predictor vectors to disk (`cache/styles/`).
+* **Style Cache (`src/cache.rs`):** Computes SHA-256 digests over reference audio files. Caches extracted 128-dimensional style embeddings and 128-dimensional predictor vectors to disk (`cache/styles/`).
 * **Auto-Setup (`src/setup.rs`):** Automatically fetches required ONNX model weights and unpacks eSpeak-NG phonetic data when launching on fresh systems.
 
 ### 2. C++ Layer
 * **Native Mel Spectrogram DSP (`src/cpp/mel_spectrogram.cpp`):** Standalone 2048-point Radix-2 Cooley-Tukey FFT with Hanning windowing and an 80-channel triangular Mel filterbank spanning 0 Hz to 12000 Hz. Extracts acoustic features for voice cloning without external audio libraries.
-* **eSpeak-NG Phonemization (`src/cpp/phonemize.cpp`):** Performs in-process grapheme-to-phoneme (G2P) transcription into International Phonetic Alphabet (IPA) tokens and maps them to StyleTTS2 LibriTTS vocabulary IDs.
+* **Punctuation-Aware Phonemization (`src/cpp/phonemize.cpp`):** Performs in-process grapheme-to-phoneme (G2P) transcription into International Phonetic Alphabet (IPA) tokens while preserving prosodic punctuation (`?`, `!`, `...`, `,`), prompting PL-BERT to naturally generate dynamic question rises and expressive speech contours.
 * **ONNX Runtime Engine (`src/cpp/styletts2_engine.cpp`):** Manages sessions for PL-BERT, BERT Encoder, StyleTTS2 Synthesizer (`final_simp.onnx`), Style Encoder, and Predictor Encoder. Tensors are allocated dynamically and freed immediately after each chunk.
 
 ---
@@ -272,7 +275,30 @@ Writing WAV file to cloned.wav...
 
 ---
 
-### 5. Reusing Cached Voices (0 ms Overhead)
+### 5. Sentence Segmentation & Natural Cadence
+
+`style2tts` automatically handles natural paragraph and sentence segmentation, inserting calibrated conversational pauses so speech never feels rushed or disjointed:
+
+* **Sentence Boundaries (`.` / `!` / `?`):** Inserts a 300–400 ms breathing pause between full thoughts.
+* **Ellipses (`...`):** Inserts an extended 450 ms contemplative pause.
+* **Sub-clauses (`,` / `;` / `:`):** Inserts a light 150 ms pause for natural phrasing.
+* **Paragraph Breaks (`\n\n`):** Automatically creates a 500 ms transition pause between topics or sections.
+
+#### Examples:
+
+Synthesize standard text with natural phrasing:
+```bash
+./style2tts "Hello world! This is direct neural speech synthesis. Each sentence flows seamlessly." -o story.wav
+```
+
+Adjust the base pause duration between sentences:
+```bash
+./style2tts "Sentence one. Sentence two. Sentence three." --pause 500 -o paused.wav
+```
+
+---
+
+### 6. Reusing Cached Voices (0 ms Overhead)
 
 When a reference file is processed, its acoustic vectors are automatically saved to `cache/styles/` under both its SHA-256 hash and its filename stem. Subsequent runs using the same file load the cached vectors with zero extraction overhead:
 
@@ -294,7 +320,7 @@ You can also reference cached voices directly by name using `-v`:
 
 ---
 
-### 6. Tuning Quality vs. Speed (`--steps`)
+### 7. Tuning Quality vs. Speed (`--steps`)
 
 Control the trade-off between synthesis speed and acoustic fidelity:
 
@@ -311,7 +337,7 @@ Control the trade-off between synthesis speed and acoustic fidelity:
 
 ---
 
-### 7. Managing Voice Presets
+### 8. Managing Voice Presets
 
 List all stored voice profiles:
 
@@ -378,6 +404,7 @@ style2ttscli/
 │   ├── styletts2_c_api.h      # C-ABI export interface for Rust FFI
 │   └── styletts2_engine.h     # ONNX Runtime session orchestration
 ├── src/
+│   ├── lib.rs                 # Library crate root exposing internal modules
 │   ├── main.rs                # CLI entry point, argument parsing & workflow
 │   ├── audio.rs               # WAV/MP3 decoding, auto-cropping & silence removal
 │   ├── cache.rs               # SHA-256 disk & memory voice style cache
@@ -399,7 +426,7 @@ style2ttscli/
 
 ## License
 
-This project is licensed under the **GNU General Public License v3.0**. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the **GNU General Public License v3.0** (GPL-3.0-or-later). See the [LICENSE](LICENSE) file for details.
 
 ## Acknowledgements
 
