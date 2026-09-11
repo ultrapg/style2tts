@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <iostream>
 #include <algorithm>
+#include <cstring>
 
 // Simple UTF-8 to UTF-32 decoder
 static std::vector<char32_t> utf8_to_utf32(const std::string& str) {
@@ -105,27 +106,62 @@ std::string PhonemizerEngine::phonemize(const std::string& text) {
         throw std::runtime_error("PhonemizerEngine not initialized");
     }
 
-    std::string textCopy = text;
+    // 1. Trim leading and trailing whitespace
+    std::string trimmed = text;
+    while (!trimmed.empty() && (trimmed.back() == ' ' || trimmed.back() == '\t' || trimmed.back() == '\r' || trimmed.back() == '\n')) {
+        trimmed.pop_back();
+    }
+    if (trimmed.empty()) {
+        return "";
+    }
+
+    // 2. Identify terminal punctuation from input text
+    std::string terminal_punct = ".";
+    if (trimmed.size() >= 3 && trimmed.substr(trimmed.size() - 3) == "...") {
+        terminal_punct = "…"; // LibriTTS ellipsis symbol (token 10)
+    } else if (trimmed.back() == '?' || trimmed.back() == '!' || trimmed.back() == '.' || trimmed.back() == ';' || trimmed.back() == ':') {
+        terminal_punct = std::string(1, trimmed.back());
+    }
+
+    // 3. Convert text to phonemes using eSpeak clause by clause, preserving internal punctuation
+    std::string textCopy = trimmed;
     const char* inputTextPointer = textCopy.c_str();
     std::string res = "";
 
     while (inputTextPointer != nullptr && *inputTextPointer != '\0') {
+        const char* prevPtr = inputTextPointer;
         const char* clausePhonemes = espeak_TextToPhonemes(
             (const void**)&inputTextPointer,
             /*textmode*/ espeakCHARS_AUTO,
             /*phonememode = IPA*/ 0x02
         );
-        if (clausePhonemes != nullptr) {
+        if (clausePhonemes != nullptr && clausePhonemes[0] != '\0') {
+            size_t segLen = (inputTextPointer != nullptr) ? (inputTextPointer - prevPtr) : strlen(prevPtr);
+            std::string segment(prevPtr, segLen);
+
+            if (!res.empty()) {
+                res += " ";
+            }
             res += clausePhonemes;
-            res += ", ";
+
+            // Preserve intra-sentence punctuation if more clauses follow
+            if (inputTextPointer != nullptr && *inputTextPointer != '\0') {
+                if (segment.find(';') != std::string::npos) {
+                    res += " ;";
+                } else if (segment.find(':') != std::string::npos) {
+                    res += " :";
+                } else if (segment.find(',') != std::string::npos) {
+                    res += " ,";
+                }
+            }
         }
     }
 
-    if (res.size() >= 2) {
-        res.pop_back();
-        res.pop_back();
+    // 4. Append terminal punctuation separated by space (StyleTTS2 / LibriTTS format)
+    if (!res.empty()) {
+        res += " " + terminal_punct;
     }
-    res += ".";
+
     return res;
 }
 

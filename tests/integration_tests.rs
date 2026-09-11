@@ -104,3 +104,28 @@ fn test_autocrop_behavior() {
     let cropped = &samples[start_idx..end_idx];
     assert_eq!(cropped.len(), max_samples);
 }
+
+#[test]
+fn test_sentence_segmentation_and_pauses() {
+    use style2tts::text::split_text_into_chunks;
+
+    let script = "It was a quiet night... Did you hear that? Look over there! Everything is fine.";
+    let chunks = split_text_into_chunks(script, 250);
+    assert_eq!(chunks.len(), 4);
+
+    // Chunk 0: Ellipsis pause expansion
+    assert_eq!(chunks[0].text, "It was a quiet night...");
+    assert!(chunks[0].pause_after_ms >= 375); // 250 * 1.5
+
+    // Chunk 1: Question
+    assert_eq!(chunks[1].text, "Did you hear that?");
+    assert!(chunks[1].pause_after_ms >= 400);
+
+    // Chunk 2: Exclamation mark
+    assert_eq!(chunks[2].text, "Look over there!");
+    assert!(chunks[2].pause_after_ms >= 400);
+
+    // Chunk 3: Standard sentence
+    assert_eq!(chunks[3].text, "Everything is fine.");
+    assert_eq!(chunks[3].pause_after_ms, 250);
+}

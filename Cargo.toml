@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["ultrapg"]
 repository = "https://github.com/ultrapg/style2ttscli"
-license = "MIT"
+license = "GPL-3.0-or-later"
 description = "Autonomous Text-to-Speech CLI in Rust & C++"
 
 [dependencies]

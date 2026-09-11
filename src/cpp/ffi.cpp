@@ -150,6 +150,38 @@ int style2tts_extract_style(
     }
 }
 
+int style2tts_get_default_embeddings(
+    Style2TtsEngine* engine,
+    float* out_style,
+    size_t style_len,
+    float* out_predictor,
+    size_t predictor_len
+) {
+    if (engine == nullptr || engine->instance == nullptr) {
+        set_error("Engine is NULL");
+        return -1;
+    }
+
+    try {
+        const auto& defStyle = engine->instance->get_default_style();
+        const auto& defPred = engine->instance->get_default_predictor();
+
+        if (out_style && style_len >= 128 && defStyle.size() >= 128) {
+            std::copy(defStyle.begin(), defStyle.begin() + 128, out_style);
+        }
+        if (out_predictor && predictor_len >= 128 && defPred.size() >= 128) {
+            std::copy(defPred.begin(), defPred.begin() + 128, out_predictor);
+        }
+        return 0;
+    } catch (const std::exception& ex) {
+        set_error(std::string("Failed to get default embeddings: ") + ex.what());
+        return -2;
+    } catch (...) {
+        set_error("Failed to get default embeddings with unknown exception");
+        return -3;
+    }
+}
+
 int style2tts_synthesize(
     Style2TtsEngine* engine,
     const char* text,

@@ -112,6 +112,27 @@ impl StyleTtsEngine {
         Ok((style, predictor))
     }
 
+    pub fn get_default_embeddings(&self) -> Result<(Vec<f32>, Vec<f32>), String> {
+        let mut style = vec![0.0f32; 128];
+        let mut predictor = vec![0.0f32; 128];
+
+        let ret = unsafe {
+            ffi::style2tts_get_default_embeddings(
+                self.raw,
+                style.as_mut_ptr(),
+                style.len(),
+                predictor.as_mut_ptr(),
+                predictor.len(),
+            )
+        };
+
+        if ret != 0 {
+            return Err(get_last_error());
+        }
+
+        Ok((style, predictor))
+    }
+
     pub fn synthesize(
         &self,
         text: &str,

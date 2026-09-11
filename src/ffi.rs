@@ -28,6 +28,14 @@ extern "C" {
         predictor_len: usize,
     ) -> c_int;
 
+    pub fn style2tts_get_default_embeddings(
+        engine: *mut Style2TtsEngine,
+        out_style: *mut f32,
+        style_len: usize,
+        out_predictor: *mut f32,
+        predictor_len: usize,
+    ) -> c_int;
+
     pub fn style2tts_synthesize(
         engine: *mut Style2TtsEngine,
         text: *const c_char,

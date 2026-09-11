@@ -1,10 +1,3 @@
-mod audio;
-mod cache;
-mod engine;
-mod ffi;
-mod setup;
-mod text;
-
 use std::fs;
 use std::io::{self, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
@@ -12,17 +5,18 @@ use std::time::Instant;
 
 use clap::Parser;
 
-use audio::{generate_silence, write_wav_24k};
-use cache::StyleCache;
-use engine::StyleTtsEngine;
-use text::split_text_into_chunks;
+use style2tts::audio::{self, generate_silence, write_wav_24k};
+use style2tts::cache::StyleCache;
+use style2tts::engine::StyleTtsEngine;
+use style2tts::setup;
+use style2tts::text::split_text_into_chunks;
 
 #[derive(Parser, Debug)]
 #[command(
     name = "style2tts",
     version = "0.1.0",
     about = "Fast, autonomous Text-to-Speech CLI with Voice Cloning (Rust & C++)",
-    after_help = "Quick Examples:\n  style2tts \"Hello world!\"\n  style2tts \"Hello world!\" -r voice.mp3 -o out.wav\n  style2tts document.txt -v my_voice -s 1.1\n  echo \"Piped text stream\" | style2tts"
+    after_help = "Quick Examples:\n  style2tts \"Hello world!\"\n  style2tts \"How are you doing today? Look at that sunrise!\"\n  style2tts \"Hello world!\" -r voice.mp3 -o out.wav\n  style2tts document.txt -v my_voice -s 1.1\n  echo \"Piped text stream\" | style2tts"
 )]
 struct Args {
     /// Text to speak or path to a text file (positional argument)
@@ -188,6 +182,7 @@ fn main() {
         eprintln!("Error: No text provided.");
         eprintln!("\nQuick usage:");
         eprintln!("  style2tts \"Your text to speak here\"");
+        eprintln!("  style2tts \"How are you doing today? Look at that sunrise!\"");
         eprintln!("  style2tts document.txt");
         eprintln!("  style2tts \"Hello!\" -r voice.mp3 -o output.wav");
         eprintln!("\nRun with --help for all options.");
@@ -239,13 +234,10 @@ fn main() {
     let init_duration = init_start.elapsed();
     println!("Engine initialized in {:.2} seconds.", init_duration.as_secs_f64());
 
-    // 7. Resolve Style / Voice Cloning
-    let mut style_vec: Option<Vec<f32>> = None;
-    let mut pred_vec: Option<Vec<f32>> = None;
-
-    if let Some(ref_path) = args.reference {
+    // 7. Resolve Base Style & Predictor Vectors
+    let (base_style, base_pred) = if let Some(ref_path) = &args.reference {
         println!("Analyzing reference audio for voice cloning: {}", ref_path.display());
-        match audio::read_audio_mono_24k(&ref_path) {
+        match audio::read_audio_mono_24k(ref_path) {
             Ok(ref_pcm) => {
                 let (active_pcm, was_cropped, orig_dur) =
                     audio::autocrop_reference_audio(&ref_pcm, 24000, 10.0);
@@ -255,11 +247,8 @@ fn main() {
                         orig_dur
                     );
                 }
-                match style_cache.get_or_extract(&engine, &ref_path, &active_pcm) {
-                    Ok((s, p)) => {
-                        style_vec = Some(s);
-                        pred_vec = Some(p);
-                    }
+                match style_cache.get_or_extract(&engine, ref_path, &active_pcm) {
+                    Ok(vectors) => vectors,
                     Err(e) => {
                         eprintln!("Failed to extract voice style: {}", e);
                         std::process::exit(1);
@@ -271,11 +260,10 @@ fn main() {
                 std::process::exit(1);
             }
         }
-    } else if let Some(voice_name) = args.voice {
-        if let Some((s, p)) = style_cache.load_named_voice(&voice_name) {
+    } else if let Some(voice_name) = &args.voice {
+        if let Some(vectors) = style_cache.load_named_voice(voice_name) {
             println!("Using voice preset: '{}'", voice_name);
-            style_vec = Some(s);
-            pred_vec = Some(p);
+            vectors
         } else {
             eprintln!("Error: Voice '{}' not found in cache.", voice_name);
             eprintln!("Run with --list-voices to inspect available presets.");
@@ -283,9 +271,16 @@ fn main() {
         }
     } else {
         println!("Using default StyleTTS2 voice embedding.");
-    }
+        match engine.get_default_embeddings() {
+            Ok(embeddings) => embeddings,
+            Err(e) => {
+                eprintln!("Failed to retrieve default embeddings from engine: {}", e);
+                std::process::exit(1);
+            }
+        }
+    };
 
-    // 8. Sentence Chunking & Streaming Synthesis
+    // 8. Sentence Chunking & Pure Native Synthesis
     let chunks = split_text_into_chunks(&text_content, args.pause);
     println!("Synthesizing speech ({} sentence chunks)...", chunks.len());
 
@@ -299,8 +294,8 @@ fn main() {
         let chunk_start = Instant::now();
         let chunk_samples = match engine.synthesize(
             &chunk.text,
-            style_vec.as_deref(),
-            pred_vec.as_deref(),
+            Some(&base_style),
+            Some(&base_pred),
             args.speed,
             effective_steps,
         ) {

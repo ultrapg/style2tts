@@ -1,8 +1,10 @@
+#[derive(Debug, Clone, PartialEq)]
 pub struct SentenceChunk {
     pub text: String,
     pub pause_after_ms: u32,
 }
 
+/// Splits text into natural sentence chunks based on punctuation and paragraphs.
 pub fn split_text_into_chunks(input: &str, base_pause_ms: u32) -> Vec<SentenceChunk> {
     let mut chunks = Vec::new();
     let trimmed = input.trim();
@@ -36,6 +38,8 @@ pub fn split_text_into_chunks(input: &str, base_pause_ms: u32) -> Vec<SentenceCh
                 base_pause_ms.max(500)
             } else if s_trimmed.ends_with('?') || s_trimmed.ends_with('!') {
                 base_pause_ms.max(400)
+            } else if s_trimmed.ends_with("...") || s_trimmed.ends_with('…') {
+                (base_pause_ms as f32 * 1.5) as u32
             } else if s_trimmed.ends_with(',') || s_trimmed.ends_with(';') || s_trimmed.ends_with(':') {
                 (base_pause_ms / 2).max(150)
             } else {
@@ -104,5 +108,15 @@ mod tests {
         assert_eq!(chunks[0].text, "Hello world!");
         assert_eq!(chunks[1].text, "How are you doing?");
         assert_eq!(chunks[2].text, "I am fine, thank you.");
+    }
+
+    #[test]
+    fn test_punctuation_pauses() {
+        let text = "Wait... What happened? Done!";
+        let chunks = split_text_into_chunks(text, 300);
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0].pause_after_ms, 450); // 300 * 1.5
+        assert_eq!(chunks[1].pause_after_ms, 400); // question mark pause
+        assert_eq!(chunks[2].pause_after_ms, 400); // exclamation mark pause
     }
 }

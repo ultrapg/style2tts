@@ -54,6 +54,18 @@ int style2tts_extract_style(
 );
 
 /**
+ * Copies the default StyleTTS2 style and predictor embeddings into output buffers.
+ * Returns 0 on success, negative error code on failure.
+ */
+int style2tts_get_default_embeddings(
+    Style2TtsEngine* engine,
+    float* out_style,
+    size_t style_len,
+    float* out_predictor,
+    size_t predictor_len
+);
+
+/**
  * Synthesizes speech for a single text clause or sentence.
  * style_emb: pointer to 128 float values (or NULL to use default/preset)
  * predictor_emb: pointer to 128 float values (or NULL to use default/preset)
