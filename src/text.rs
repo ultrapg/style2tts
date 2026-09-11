@@ -14,6 +14,7 @@ pub fn split_text_into_chunks(input: &str, base_pause_ms: u32) -> Vec<SentenceCh
 
     // Split paragraphs first
     let paragraphs: Vec<&str> = trimmed.split("\n\n").collect();
+    let max_chars_per_chunk = 200; // StyleTTS2 fails around ~512 phonemes, ~250 chars is safe
 
     for (p_idx, paragraph) in paragraphs.iter().enumerate() {
         let is_last_paragraph = p_idx + 1 == paragraphs.len();
@@ -32,28 +33,79 @@ pub fn split_text_into_chunks(input: &str, base_pause_ms: u32) -> Vec<SentenceCh
                 continue;
             }
 
-            // Determine pause based on position and terminal punctuation
-            let pause_ms = if is_last_sentence && !is_last_paragraph {
-                // Paragraph boundary pause: longer
-                base_pause_ms.max(500)
-            } else if s_trimmed.ends_with('?') || s_trimmed.ends_with('!') {
-                base_pause_ms.max(400)
-            } else if s_trimmed.ends_with("...") || s_trimmed.ends_with('…') {
-                (base_pause_ms as f32 * 1.5) as u32
-            } else if s_trimmed.ends_with(',') || s_trimmed.ends_with(';') || s_trimmed.ends_with(':') {
-                (base_pause_ms / 2).max(150)
-            } else {
-                base_pause_ms
-            };
+            // Sub-segment long sentences on commas or spaces to avoid ONNX max sequence limits
+            let sub_chunks = split_long_sentence(s_trimmed, max_chars_per_chunk);
 
-            chunks.push(SentenceChunk {
-                text: s_trimmed.to_string(),
-                pause_after_ms: pause_ms,
-            });
+            for (sub_idx, sub_str) in sub_chunks.iter().enumerate() {
+                let is_last_sub = sub_idx + 1 == sub_chunks.len();
+                let sub_trimmed = sub_str.trim();
+
+                let pause_ms = if is_last_sub {
+                    if is_last_sentence && !is_last_paragraph {
+                        // Paragraph boundary pause: longer
+                        base_pause_ms.max(500)
+                    } else if sub_trimmed.ends_with('?') || sub_trimmed.ends_with('!') {
+                        base_pause_ms.max(400)
+                    } else if sub_trimmed.ends_with("...") || sub_trimmed.ends_with('…') {
+                        (base_pause_ms as f32 * 1.5) as u32
+                    } else if sub_trimmed.ends_with(',') || sub_trimmed.ends_with(';') || sub_trimmed.ends_with(':') {
+                        (base_pause_ms / 2).max(150)
+                    } else {
+                        base_pause_ms
+                    }
+                } else {
+                    // It's a mid-sentence break created by sub-segmentation
+                    if sub_trimmed.ends_with(',') || sub_trimmed.ends_with(';') || sub_trimmed.ends_with(':') || sub_trimmed.ends_with("--") {
+                        (base_pause_ms / 2).max(150) // natural pause for comma
+                    } else {
+                        // artificial break at space, short pause to simulate continuous speech
+                        (base_pause_ms / 4).max(50)
+                    }
+                };
+
+                chunks.push(SentenceChunk {
+                    text: sub_trimmed.to_string(),
+                    pause_after_ms: pause_ms,
+                });
+            }
         }
     }
 
     chunks
+}
+
+fn split_long_sentence(text: &str, max_chars: usize) -> Vec<String> {
+    if text.len() <= max_chars {
+        return vec![text.to_string()];
+    }
+
+    let mut result = Vec::new();
+    let mut current = String::new();
+    
+    for word in text.split_whitespace() {
+        if current.is_empty() {
+            current.push_str(word);
+        } else if current.len() + word.len() + 1 > max_chars {
+            // Must break here to avoid exceeding max_chars
+            result.push(current.clone());
+            current = word.to_string();
+        } else {
+            current.push(' ');
+            current.push_str(word);
+        }
+
+        // If chunk is getting moderately long and ends with a natural break, flush early
+        if current.len() > 80 && (word.ends_with(',') || word.ends_with(';') || word.ends_with(':') || word.ends_with("--")) {
+             result.push(current.clone());
+             current.clear();
+        }
+    }
+    
+    if !current.is_empty() {
+        result.push(current);
+    }
+    
+    result
 }
 
 fn segment_sentences(text: &str) -> Vec<String> {
