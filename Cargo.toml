@@ -1,0 +1,17 @@
+[package]
+name = "style2tts"
+version = "0.1.0"
+edition = "2021"
+authors = ["ultrapg"]
+repository = "https://github.com/ultrapg/style2ttscli"
+license = "MIT"
+description = "Autonomous Text-to-Speech CLI in Rust & C++"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+sha2 = "0.10"
+hound = "3.5"
+minimp3 = "0.6.1"
+
+[build-dependencies]
+cc = { version = "1.2", features = ["parallel"] }
